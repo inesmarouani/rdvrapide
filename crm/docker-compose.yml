@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rdvrapide}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rdvrapide}
+      POSTGRES_DB: ${POSTGRES_DB:-rdvrapide}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rdvrapide}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      # Port hôte différent du port standard 5432 pour éviter tout conflit
+      # avec un PostgreSQL déjà installé sur la machine. L'app, elle,
+      # continue de se connecter à "db:5432" via le réseau Docker interne.
+      - "5433:5432"
+
+  # Service unique : API + frontend statique dans la même image (voir
+  # backend/Dockerfile). Un seul service à déployer, pas de CORS entre
+  # deux origines différentes.
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rdvrapide}:${POSTGRES_PASSWORD:-rdvrapide}@db:5432/${POSTGRES_DB:-rdvrapide}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENVIRONMENT: production
+      APP_PASSWORD: ${APP_PASSWORD:?La variable APP_PASSWORD est obligatoire — voir .env.example}
+      SECRET_KEY: ${SECRET_KEY:?La variable SECRET_KEY est obligatoire — voir .env.example}
+    ports:
+      - "8080:8000"
+
+volumes:
+  db_data:
